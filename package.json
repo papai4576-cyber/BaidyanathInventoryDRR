@@ -1,0 +1,18 @@
+{
+  "name": "baidyanath-inventory-drr",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Channel-wise inventory and DRR monitoring for Baidyanath, sourced from Unicommerce, pushed to Google Sheets.",
+  "type": "commonjs",
+  "main": "run.js",
+  "scripts": {
+    "start": "node run.js",
+    "inspect-wsdl": "node scripts/inspectWsdl.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "googleapis": "^144.0.0",
+    "strong-soap": "^6.0.0",
+    "xml2js": "^0.6.2"
+  }
+}
