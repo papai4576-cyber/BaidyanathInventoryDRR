@@ -102,6 +102,13 @@ class UnicommerceClient {
         if (body?.Fault) {
           throw new SoapFault(body.Fault.faultstring, text);
         }
+        // A real response always has at least one child under <Body> (the response
+        // wrapper element). No Body at all, or an empty one, means the XML parsed without
+        // throwing but isn't an actual SOAP response -- confirmed live: a gateway hiccup
+        // once returned a body that left this undefined, crashing the caller with no retry.
+        if (!body || Object.keys(body).length === 0) {
+          throw new TransientSoapError("Unexpected empty/malformed SOAP body from Unicommerce (no Envelope.Body content)", null);
+        }
         return body;
       },
       {

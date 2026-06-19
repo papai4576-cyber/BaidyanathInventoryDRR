@@ -148,6 +148,55 @@ function buildBandingRequests(sheetId, header, rowCount, existingBandedRangeIds)
   return requests;
 }
 
+// Explicit pixel widths instead of autoResizeDimensions: autoResizeDimensions was sizing
+// columns to fit the (short) data values and under-sizing for long bold header text (e.g.
+// channel codes, "Total DRR (window=14d)") -- combined with wrapStrategy:CLIP and
+// right-aligned headers, the overflow silently clipped off the START of the header text
+// (anchored to the right edge), which is what made headers unreadable. Sizing explicitly
+// from the longest of the header label and every data value in that column avoids relying
+// on Sheets' autosize heuristics at all.
+function computeColumnWidths(header, dataRows, wideColumnIndex) {
+  return header.map((label, col) => {
+    let maxLen = label.length;
+    for (const row of dataRows) {
+      const len = String(row[col] ?? "").length;
+      if (len > maxLen) maxLen = len;
+    }
+    const cap = col === wideColumnIndex ? 450 : 300;
+    return Math.min(cap, Math.max(60, maxLen * 8 + 24));
+  });
+}
+
+function buildColumnWidthRequests(sheetId, header, dataRows, wideColumnIndex) {
+  return computeColumnWidths(header, dataRows, wideColumnIndex).map((pixelSize, col) => ({
+    updateDimensionProperties: {
+      range: { sheetId, dimension: "COLUMNS", startIndex: col, endIndex: col + 1 },
+      properties: { pixelSize },
+      fields: "pixelSize",
+    },
+  }));
+}
+
+// A sheet has at most one basic filter, so reissuing this every run both gives the header
+// row its sort/filter dropdowns AND overwrites any filter a user created by hand anchored
+// to the wrong row (e.g. the banner) -- that mis-anchoring is what made the header row
+// itself get dragged into a sort instead of staying put.
+function buildFilterRequest(sheetId, header, rowCount) {
+  return {
+    setBasicFilter: {
+      filter: {
+        range: {
+          sheetId,
+          startRowIndex: HEADER_ROW_INDEX,
+          endRowIndex: DATA_START_ROW_INDEX + rowCount,
+          startColumnIndex: 0,
+          endColumnIndex: header.length,
+        },
+      },
+    },
+  };
+}
+
 function buildBorderRequests(sheetId, header, rowCount) {
   const endRowIndex = DATA_START_ROW_INDEX + rowCount;
   return [
@@ -169,10 +218,12 @@ function buildBorderRequests(sheetId, header, rowCount) {
   ];
 }
 
-// Bold/frozen header, banner styling, autosized columns, a Days-of-Cover heatmap, banded
-// rows, a tab color, and borders. Conditional format rules and bandings are cleared and
-// re-added each run instead of left to accumulate, since this runs daily via cron.
-function buildFormattingRequests({ sheetId, header, rowCount, existingConditionalFormatCount, existingBandedRangeIds, reorderThresholdDays, tabColor }) {
+// Bold/frozen header, banner styling, explicit column widths, a Days-of-Cover heatmap,
+// banded rows, a tab color, a sort/filter header, and borders. Conditional format rules
+// and bandings are cleared and re-added each run instead of left to accumulate, since this
+// runs daily via cron.
+function buildFormattingRequests({ sheetId, header, dataRows, existingConditionalFormatCount, existingBandedRangeIds, reorderThresholdDays, tabColor }) {
+  const rowCount = dataRows.length;
   const requests = [];
 
   for (let i = existingConditionalFormatCount - 1; i >= 0; i--) {
@@ -222,12 +273,8 @@ function buildFormattingRequests({ sheetId, header, rowCount, existingConditiona
   if (gradientRequest) requests.push(gradientRequest);
 
   requests.push(...buildBorderRequests(sheetId, header, rowCount));
-
-  requests.push({
-    autoResizeDimensions: {
-      dimensions: { sheetId, dimension: "COLUMNS", startIndex: 0, endIndex: header.length },
-    },
-  });
+  requests.push(buildFilterRequest(sheetId, header, rowCount));
+  requests.push(...buildColumnWidthRequests(sheetId, header, dataRows, 1)); // Product Name
 
   return requests;
 }
@@ -247,7 +294,8 @@ function buildSummaryRow(facilityTable) {
   ];
 }
 
-function buildSummaryFormattingRequests({ sheetId, header, rowCount }) {
+function buildSummaryFormattingRequests({ sheetId, header, dataRows }) {
+  const rowCount = dataRows.length;
   const requests = [];
 
   requests.push({
@@ -274,10 +322,8 @@ function buildSummaryFormattingRequests({ sheetId, header, rowCount }) {
   });
 
   requests.push(...buildBorderRequests(sheetId, header, rowCount));
-
-  requests.push({
-    autoResizeDimensions: { dimensions: { sheetId, dimension: "COLUMNS", startIndex: 0, endIndex: header.length } },
-  });
+  requests.push(buildFilterRequest(sheetId, header, rowCount));
+  requests.push(...buildColumnWidthRequests(sheetId, header, dataRows));
 
   return requests;
 }
@@ -355,7 +401,8 @@ async function writeInventoryDrrTable(facilityTables, { sheetId, serviceAccountK
     const { facilityCode, channels, rows } = facilityTable;
     const tabName = sanitizeTabName(facilityCode);
     const header = buildHeader(channels, drrWindowDays);
-    const values = [bannerRow, header, ...rows.map((r) => toSheetRow(r, channels, reorderThresholdDays))];
+    const dataRows = rows.map((r) => toSheetRow(r, channels, reorderThresholdDays));
+    const values = [bannerRow, header, ...dataRows];
 
     await withSheetsRetry(() => sheets.spreadsheets.values.clear({ spreadsheetId: sheetId, range: `${tabName}!A:ZZ` }), `${tabName}.clear`);
     await withSheetsRetry(
@@ -374,7 +421,7 @@ async function writeInventoryDrrTable(facilityTables, { sheetId, serviceAccountK
       ...buildFormattingRequests({
         sheetId: sheet.properties.sheetId,
         header,
-        rowCount: rows.length,
+        dataRows,
         existingConditionalFormatCount: (sheet.conditionalFormats || []).length,
         existingBandedRangeIds: (sheet.bandedRanges || []).map((b) => b.bandedRangeId),
         reorderThresholdDays,
@@ -384,7 +431,8 @@ async function writeInventoryDrrTable(facilityTables, { sheetId, serviceAccountK
   }
 
   const summaryHeader = buildSummaryHeader();
-  const summaryValues = [bannerRow, summaryHeader, ...facilityTables.map(buildSummaryRow)];
+  const summaryDataRows = facilityTables.map(buildSummaryRow);
+  const summaryValues = [bannerRow, summaryHeader, ...summaryDataRows];
   await withSheetsRetry(() => sheets.spreadsheets.values.clear({ spreadsheetId: sheetId, range: `${SUMMARY_TAB_NAME}!A:ZZ` }), "Summary.clear");
   await withSheetsRetry(
     () =>
@@ -401,7 +449,7 @@ async function writeInventoryDrrTable(facilityTables, { sheetId, serviceAccountK
     ...buildSummaryFormattingRequests({
       sheetId: summarySheet.properties.sheetId,
       header: summaryHeader,
-      rowCount: facilityTables.length,
+      dataRows: summaryDataRows,
     })
   );
 
