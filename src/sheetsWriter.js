@@ -162,8 +162,11 @@ function computeColumnWidths(header, dataRows, wideColumnIndex) {
       const len = String(row[col] ?? "").length;
       if (len > maxLen) maxLen = len;
     }
-    const cap = col === wideColumnIndex ? 450 : 300;
-    return Math.min(cap, Math.max(60, maxLen * 8 + 24));
+    // Bold header text plus the sort/filter dropdown icon (added by setBasicFilter) both
+    // eat into a column's usable width beyond plain character count -- 8px/char + 24px was
+    // confirmed live to still clip the longest channel-code headers by ~1 character.
+    const cap = col === wideColumnIndex ? 480 : 320;
+    return Math.min(cap, Math.max(70, maxLen * 9 + 32));
   });
 }
 
