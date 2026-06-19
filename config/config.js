@@ -16,7 +16,9 @@ module.exports = {
   googleSheets: {
     sheetId: process.env.GOOGLE_SHEET_ID,
     serviceAccountKeyPath: process.env.GOOGLE_SERVICE_ACCOUNT_KEY_PATH || "./secrets/service-account.json",
-    tabName: "Inventory_DRR",
+    // Output is now one tab per facility (tab name = facility code). This is the name of
+    // the old single combined tab, kept here only so the writer can delete it on first run.
+    legacyTabName: "Inventory_DRR",
   },
 
   // DRR window: how many trailing days of sales to average over. Configurable per the

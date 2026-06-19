@@ -38,9 +38,22 @@ function computeSuggestedReorderQty(drr, leadTimeDays, currentStock, safetyStock
   return Math.max(0, Math.round(targetStock - currentStock));
 }
 
+/**
+ * Tiered status for presentation layers (e.g. an icon set in the sheet), distinct from the
+ * boolean computeReorderFlag -- NO_SALES (no recent velocity) is deliberately not the same
+ * as HEALTHY, since there's no basis to call it either good or bad.
+ */
+function computeReorderStatus(daysOfCover, reorderThresholdDays, watchMultiplier = 2) {
+  if (daysOfCover === null) return "NO_SALES";
+  if (daysOfCover < reorderThresholdDays) return "REORDER";
+  if (daysOfCover < reorderThresholdDays * watchMultiplier) return "WATCH";
+  return "HEALTHY";
+}
+
 module.exports = {
   computeDRR,
   computeDaysOfCover,
   computeReorderFlag,
   computeSuggestedReorderQty,
+  computeReorderStatus,
 };

@@ -1,5 +1,6 @@
 const crypto = require("crypto");
 const { parseStringPromise } = require("xml2js");
+const { withRetry } = require("./retry");
 
 const PASSWORD_TYPE =
   "http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-username-token-profile-1.0#PasswordText";
@@ -43,6 +44,18 @@ class SoapFault extends Error {
   }
 }
 
+// Network failures and unparseable responses are transient (confirmed live: a gateway
+// hiccup returned a non-XML body once, and an immediate retry succeeded) -- distinct from
+// SoapFault, which means the request reached Unicommerce and got a real, deterministic
+// error back that a retry won't fix.
+class TransientSoapError extends Error {
+  constructor(message, cause) {
+    super(message);
+    this.name = "TransientSoapError";
+    this.cause = cause;
+  }
+}
+
 class UnicommerceClient {
   constructor({ tenantUrl, username, apiKey, version = "1.9" }) {
     this.tenantUrl = tenantUrl.replace(/\/$/, "");
@@ -58,27 +71,50 @@ class UnicommerceClient {
       bodyXml,
     });
 
-    const res = await fetch(this.endpoint, {
-      method: "POST",
-      headers: {
-        "Content-Type": "text/xml; charset=utf-8",
-        SOAPAction: '""',
+    return withRetry(
+      async () => {
+        let res;
+        try {
+          res = await fetch(this.endpoint, {
+            method: "POST",
+            headers: {
+              "Content-Type": "text/xml; charset=utf-8",
+              SOAPAction: '""',
+            },
+            body: envelope,
+          });
+        } catch (err) {
+          throw new TransientSoapError(`Network error calling Unicommerce: ${err.message}`, err);
+        }
+
+        const text = await res.text();
+        let parsed;
+        try {
+          parsed = await parseStringPromise(text, {
+            explicitArray: false,
+            tagNameProcessors: [(name) => name.replace(/^.*:/, "")],
+          });
+        } catch (err) {
+          throw new TransientSoapError(`XML parse error from Unicommerce response: ${err.message}`, err);
+        }
+
+        const body = parsed?.Envelope?.Body;
+        if (body?.Fault) {
+          throw new SoapFault(body.Fault.faultstring, text);
+        }
+        return body;
       },
-      body: envelope,
-    });
-
-    const text = await res.text();
-    const parsed = await parseStringPromise(text, {
-      explicitArray: false,
-      tagNameProcessors: [(name) => name.replace(/^.*:/, "")],
-    });
-
-    const body = parsed?.Envelope?.Body;
-    if (body?.Fault) {
-      throw new SoapFault(body.Fault.faultstring, text);
-    }
-    return body;
+      {
+        retries: 3,
+        baseDelayMs: 500,
+        isRetryable: (err) => err instanceof TransientSoapError,
+        onRetry: (err, attempt, delayMs) =>
+          console.warn(
+            `[${new Date().toISOString()}] Unicommerce call failed (attempt ${attempt}), retrying in ${delayMs}ms: ${err.message}`
+          ),
+      }
+    );
   }
 }
 
-module.exports = { UnicommerceClient, SoapFault };
+module.exports = { UnicommerceClient, SoapFault, TransientSoapError };

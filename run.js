@@ -41,19 +41,20 @@ async function main() {
   });
   log(`Pulled ${inventoryRows.length} inventory rows.`);
 
-  const table = buildInventoryDrrTable(salesRows, inventoryRows, config);
-  log(`Built final table with ${table.length} rows.`);
+  const facilityTables = buildInventoryDrrTable(salesRows, inventoryRows, config);
+  const totalRows = facilityTables.reduce((sum, f) => sum + f.rows.length, 0);
+  const flagged = facilityTables.reduce((sum, f) => sum + f.rows.filter((r) => r.reorderFlag).length, 0);
+  log(`Built ${facilityTables.length} facility tables (${totalRows} SKU rows total, ${flagged} flagged for reorder).`);
 
-  const flagged = table.filter((r) => r.reorderFlag).length;
-  log(`${flagged} rows flagged for reorder.`);
-
-  await writeInventoryDrrTable(table, {
+  await writeInventoryDrrTable(facilityTables, {
     sheetId: config.googleSheets.sheetId,
     serviceAccountKeyPath: config.googleSheets.serviceAccountKeyPath,
-    tabName: config.googleSheets.tabName,
     drrWindowDays: config.drrWindowDays,
+    reorderThresholdDays: config.reorderThresholdDays,
+    legacyTabName: config.googleSheets.legacyTabName,
+    syncedAt: new Date().toISOString(),
   });
-  log(`Wrote table to Google Sheet (tab "${config.googleSheets.tabName}").`);
+  log(`Wrote ${facilityTables.length} facility tabs to Google Sheet: ${facilityTables.map((f) => f.facilityCode).join(", ")}.`);
 }
 
 main().catch((err) => {

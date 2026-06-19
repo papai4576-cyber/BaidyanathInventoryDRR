@@ -4,6 +4,7 @@ const {
   computeDaysOfCover,
   computeReorderFlag,
   computeSuggestedReorderQty,
+  computeReorderStatus,
 } = require("../src/drrEngine");
 
 // 14-day window, SKU A sold 7 units on Shopify, 3 on Amazon, both facility F1.
@@ -29,5 +30,17 @@ assert.strictEqual(computeSuggestedReorderQty(0.5, 7, 2, 5), 4);
 assert.strictEqual(computeSuggestedReorderQty(0.5, 7, 100, 5), 0);
 // Zero DRR -> 0
 assert.strictEqual(computeSuggestedReorderQty(0, 7, 2, 5), 0);
+
+// Reorder status tiers (reorderThresholdDays=10, default watchMultiplier=2)
+assert.strictEqual(computeReorderStatus(null, 10), "NO_SALES");
+assert.strictEqual(computeReorderStatus(5, 10), "REORDER");
+assert.strictEqual(computeReorderStatus(9.9, 10), "REORDER");
+assert.strictEqual(computeReorderStatus(10, 10), "WATCH");
+assert.strictEqual(computeReorderStatus(19.9, 10), "WATCH");
+assert.strictEqual(computeReorderStatus(20, 10), "HEALTHY");
+assert.strictEqual(computeReorderStatus(100, 10), "HEALTHY");
+// Custom watchMultiplier
+assert.strictEqual(computeReorderStatus(25, 10, 3), "WATCH");
+assert.strictEqual(computeReorderStatus(30, 10, 3), "HEALTHY");
 
 console.log("All drrEngine fixture checks passed.");

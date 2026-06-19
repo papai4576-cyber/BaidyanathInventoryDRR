@@ -45,6 +45,9 @@ async function fetchInventoryBatch(client, { skuCodes, facilityCodes }) {
     for (const facility of facilities) {
       rows.push({
         sku: item.ItemSKU,
+        // Trimmed because Unicommerce's ItemTypeName has stray leading/trailing whitespace
+        // on some catalog entries, which throws off Sheet column alignment.
+        itemName: item.ItemTypeName ? item.ItemTypeName.trim() : null,
         facilityCode: facility.FacilityCode,
         currentStock: parseInt(facility.Inventory, 10) || 0,
       });
@@ -56,7 +59,7 @@ async function fetchInventoryBatch(client, { skuCodes, facilityCodes }) {
 /**
  * Pulls current stock for the given SKUs across the given facilities, batching SKUs into
  * groups of MAX_SKUS_PER_CALL to stay within Unicommerce's per-request limit.
- * Returns [{ sku, facilityCode, currentStock }].
+ * Returns [{ sku, itemName, facilityCode, currentStock }].
  */
 async function pullInventorySnapshot(client, { skuCodes, facilityCodes }) {
   const batches = chunk(skuCodes, MAX_SKUS_PER_CALL);
