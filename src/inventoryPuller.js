@@ -3,6 +3,18 @@ function asArray(x) {
   return Array.isArray(x) ? x : [x];
 }
 
+// Unicommerce's catalog has inconsistent brand casing for the same vendor (confirmed live:
+// "Goodcare"/"GOODCARE", "Baidyanath"/"BAIDYANATH") -- normalize known brands to one
+// canonical form so the same vendor doesn't show up as two different-looking values in the
+// sheet. Anything not in this list is passed through as-is (trimmed only).
+const BRAND_CANONICAL = { GOODCARE: "GOODCARE", BAIDYANATH: "BAIDYANATH" };
+
+function normalizeBrand(rawBrand) {
+  if (!rawBrand) return null;
+  const trimmed = rawBrand.trim();
+  return BRAND_CANONICAL[trimmed.toUpperCase()] || trimmed;
+}
+
 async function fetchCatalogPage(client, { displayStart, displayLength }) {
   const body = `<ser:SearchItemTypesRequest>
     <ser:GetInventorySnapshot>true</ser:GetInventorySnapshot>
@@ -37,10 +49,10 @@ async function pullInventorySnapshot(client, { pageSize = 500, onProgress } = {}
     const { totalRecords, items } = await fetchCatalogPage(client, { displayStart, displayLength: pageSize });
 
     for (const item of items) {
-      // Trimmed because Unicommerce's Name/Brand have stray leading/trailing whitespace on
-      // some catalog entries, which throws off Sheet column alignment.
+      // Trimmed because Unicommerce's Name has stray leading/trailing whitespace on some
+      // catalog entries, which throws off Sheet column alignment.
       const itemName = item.Name ? item.Name.trim() : null;
-      const brand = item.Brand ? item.Brand.trim() : null;
+      const brand = normalizeBrand(item.Brand);
       for (const snapshot of asArray(item.InventorySnapshots?.InventorySnapshot)) {
         rows.push({
           sku: item.SKUCode,
