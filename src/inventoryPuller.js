@@ -27,7 +27,7 @@ async function fetchCatalogPage(client, { displayStart, displayLength }) {
  * GetBulkItemTypeInventory's confirmed 50-SKU cap, DisplayLength=500 here returns a full
  * page with no error, so paginating in larger chunks is safe.
  *
- * Returns [{ sku, itemName, facilityCode, currentStock }], one row per (sku, facility).
+ * Returns [{ sku, itemName, brand, facilityCode, currentStock }], one row per (sku, facility).
  */
 async function pullInventorySnapshot(client, { pageSize = 500, onProgress } = {}) {
   let displayStart = 0;
@@ -37,13 +37,15 @@ async function pullInventorySnapshot(client, { pageSize = 500, onProgress } = {}
     const { totalRecords, items } = await fetchCatalogPage(client, { displayStart, displayLength: pageSize });
 
     for (const item of items) {
-      // Trimmed because Unicommerce's Name has stray leading/trailing whitespace on some
-      // catalog entries, which throws off Sheet column alignment.
+      // Trimmed because Unicommerce's Name/Brand have stray leading/trailing whitespace on
+      // some catalog entries, which throws off Sheet column alignment.
       const itemName = item.Name ? item.Name.trim() : null;
+      const brand = item.Brand ? item.Brand.trim() : null;
       for (const snapshot of asArray(item.InventorySnapshots?.InventorySnapshot)) {
         rows.push({
           sku: item.SKUCode,
           itemName,
+          brand,
           facilityCode: snapshot.Facility,
           currentStock: parseInt(snapshot.Inventory, 10) || 0,
         });

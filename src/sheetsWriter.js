@@ -3,6 +3,8 @@ const { computeReorderStatus } = require("./drrEngine");
 const { withRetry } = require("./retry");
 
 const SUMMARY_TAB_NAME = "Summary";
+const DASHBOARD_TAB_NAME = "Reorder Dashboard";
+const DASHBOARD_TAB_COLOR = { red: 0.83, green: 0.18, blue: 0.18 }; // fixed alert red, not the facility palette
 
 // Layout: row 0 = last-synced banner, row 1 = header, row 2+ = data. Single source of
 // truth so every range below stays consistent if the layout ever shifts again.
@@ -52,6 +54,7 @@ function buildHeader(channels, drrWindowDays) {
   return [
     "SKU",
     "Product Name",
+    "Vendor",
     "Current Stock",
     ...channels,
     `Total DRR (window=${drrWindowDays}d)`,
@@ -66,6 +69,7 @@ function toSheetRow(row, channels, reorderThresholdDays) {
   return [
     row.sku,
     row.productName,
+    row.brand,
     row.currentStock,
     ...channels.map((c) => (row.channelDrr[c] !== undefined ? Number(row.channelDrr[c].toFixed(3)) : "")),
     Number(row.totalDrr.toFixed(3)),
@@ -75,10 +79,14 @@ function toSheetRow(row, channels, reorderThresholdDays) {
   ];
 }
 
-// Left-align identifying/text columns (SKU, Product Name), center the Reorder Status, and
-// right-align every numeric column -- set explicitly rather than relying on Sheets' default
-// type-based alignment, which produced an inconsistent layout in an earlier pass.
+// Left-align identifying/text columns (everything before "Current Stock" -- SKU, Product
+// Name, Vendor, and on the cross-facility dashboard, Facility too), center the Reorder
+// Status, and right-align every numeric column -- set explicitly rather than relying on
+// Sheets' default type-based alignment, which produced an inconsistent layout in an earlier
+// pass. Derived from header label positions so it works for both the per-facility layout
+// and the dashboard's extra leading Facility column.
 function buildAlignmentRequests(sheetId, header, startRowIndex, endRowIndex) {
+  const textEnd = header.indexOf("Current Stock");
   const statusColIndex = header.indexOf("Reorder Status");
   const requests = [];
 
@@ -93,10 +101,10 @@ function buildAlignmentRequests(sheetId, header, startRowIndex, endRowIndex) {
     });
   }
 
-  alignRange(0, 2, "LEFT"); // SKU, Product Name
-  alignRange(2, statusColIndex, "RIGHT"); // Current Stock .. Days of Cover
-  alignRange(statusColIndex, statusColIndex + 1, "CENTER"); // Reorder Status
-  alignRange(statusColIndex + 1, header.length, "RIGHT"); // Suggested Reorder Qty
+  alignRange(0, textEnd, "LEFT");
+  alignRange(textEnd, statusColIndex, "RIGHT");
+  alignRange(statusColIndex, statusColIndex + 1, "CENTER");
+  alignRange(statusColIndex + 1, header.length, "RIGHT");
 
   return requests;
 }
@@ -246,7 +254,7 @@ function buildFormattingRequests({ sheetId, header, dataRows, existingConditiona
     updateSheetProperties: {
       properties: {
         sheetId,
-        gridProperties: { frozenRowCount: HEADER_ROW_INDEX + 1, frozenColumnCount: 2 },
+        gridProperties: { frozenRowCount: HEADER_ROW_INDEX + 1, frozenColumnCount: header.indexOf("Current Stock") },
         tabColor,
         tabColorStyle: { rgbColor: tabColor },
       },
@@ -285,7 +293,7 @@ function buildFormattingRequests({ sheetId, header, dataRows, existingConditiona
 
   requests.push(...buildBorderRequests(sheetId, header, rowCount));
   requests.push(buildFilterRequest(sheetId, header, rowCount));
-  requests.push(...buildColumnWidthRequests(sheetId, header, dataRows, 1)); // Product Name
+  requests.push(...buildColumnWidthRequests(sheetId, header, dataRows, header.indexOf("Product Name")));
 
   return requests;
 }
@@ -336,6 +344,69 @@ function buildSummaryFormattingRequests({ sheetId, header, dataRows }) {
   requests.push(buildFilterRequest(sheetId, header, rowCount));
   requests.push(...buildColumnWidthRequests(sheetId, header, dataRows));
 
+  return requests;
+}
+
+function buildDashboardHeader(drrWindowDays) {
+  return [
+    "Facility",
+    "SKU",
+    "Product Name",
+    "Vendor",
+    "Current Stock",
+    `Total DRR (window=${drrWindowDays}d)`,
+    "Days of Cover",
+    "Reorder Status",
+    "Suggested Reorder Qty",
+  ];
+}
+
+// Cross-facility action list for supply chain: every SKU that's REORDER or WATCH status in
+// any facility, in one place, sorted most-urgent-first -- so adding more facilities later
+// doesn't mean more tabs to individually check before knowing what needs ordering.
+const DASHBOARD_SEVERITY_RANK = { REORDER: 0, WATCH: 1 };
+
+function buildDashboardRows(facilityTables, reorderThresholdDays) {
+  const rows = [];
+  for (const { facilityCode, rows: facilityRows } of facilityTables) {
+    for (const row of facilityRows) {
+      const status = computeReorderStatus(row.daysOfCover, reorderThresholdDays);
+      if (status === "REORDER" || status === "WATCH") {
+        rows.push({ ...row, facilityCode, status });
+      }
+    }
+  }
+  rows.sort((a, b) => DASHBOARD_SEVERITY_RANK[a.status] - DASHBOARD_SEVERITY_RANK[b.status] || a.daysOfCover - b.daysOfCover);
+  return rows;
+}
+
+function toDashboardSheetRow(row) {
+  return [
+    row.facilityCode,
+    row.sku,
+    row.productName,
+    row.brand,
+    row.currentStock,
+    Number(row.totalDrr.toFixed(3)),
+    Number(row.daysOfCover.toFixed(1)),
+    STATUS_EMOJI[row.status],
+    row.suggestedReorderQty,
+  ];
+}
+
+function buildDashboardFormattingRequests({ sheetId, header, dataRows, existingConditionalFormatCount, existingBandedRangeIds, reorderThresholdDays }) {
+  const requests = buildFormattingRequests({
+    sheetId,
+    header,
+    dataRows,
+    existingConditionalFormatCount,
+    existingBandedRangeIds,
+    reorderThresholdDays,
+    tabColor: DASHBOARD_TAB_COLOR,
+  });
+  requests.push({
+    updateSheetProperties: { properties: { sheetId, index: 1 }, fields: "index" },
+  });
   return requests;
 }
 
@@ -401,6 +472,7 @@ async function writeInventoryDrrTable(facilityTables, { sheetId, serviceAccountK
     await ensureTabExists(sheets, sheetId, sanitizeTabName(facilityCode), existingTitles);
   }
   await ensureTabExists(sheets, sheetId, SUMMARY_TAB_NAME, existingTitles);
+  await ensureTabExists(sheets, sheetId, DASHBOARD_TAB_NAME, existingTitles);
 
   const metaAfterCreate = await withSheetsRetry(() => sheets.spreadsheets.get({ spreadsheetId: sheetId }), "get(afterCreate)");
   const sheetByTitle = new Map(metaAfterCreate.data.sheets.map((s) => [s.properties.title, s]));
@@ -461,6 +533,33 @@ async function writeInventoryDrrTable(facilityTables, { sheetId, serviceAccountK
       sheetId: summarySheet.properties.sheetId,
       header: summaryHeader,
       dataRows: summaryDataRows,
+    })
+  );
+
+  const dashboardHeader = buildDashboardHeader(drrWindowDays);
+  const dashboardRows = buildDashboardRows(facilityTables, reorderThresholdDays);
+  const dashboardDataRows = dashboardRows.map(toDashboardSheetRow);
+  const dashboardValues = [bannerRow, dashboardHeader, ...dashboardDataRows];
+  await withSheetsRetry(() => sheets.spreadsheets.values.clear({ spreadsheetId: sheetId, range: `${DASHBOARD_TAB_NAME}!A:ZZ` }), "Dashboard.clear");
+  await withSheetsRetry(
+    () =>
+      sheets.spreadsheets.values.update({
+        spreadsheetId: sheetId,
+        range: `${DASHBOARD_TAB_NAME}!A1`,
+        valueInputOption: "RAW",
+        requestBody: { values: dashboardValues },
+      }),
+    "Dashboard.update"
+  );
+  const dashboardSheet = sheetByTitle.get(DASHBOARD_TAB_NAME);
+  formattingRequests.push(
+    ...buildDashboardFormattingRequests({
+      sheetId: dashboardSheet.properties.sheetId,
+      header: dashboardHeader,
+      dataRows: dashboardDataRows,
+      existingConditionalFormatCount: (dashboardSheet.conditionalFormats || []).length,
+      existingBandedRangeIds: (dashboardSheet.bandedRanges || []).map((b) => b.bandedRangeId),
+      reorderThresholdDays,
     })
   );
 

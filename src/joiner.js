@@ -63,6 +63,7 @@ function buildInventoryDrrTable(salesRows, inventoryRows, config) {
       rows.push({
         sku,
         productName: invRow.itemName || "",
+        brand: invRow.brand || "",
         currentStock,
         channelDrr,
         totalDrr,
