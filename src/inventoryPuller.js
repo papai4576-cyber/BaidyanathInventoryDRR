@@ -1,74 +1,61 @@
-function xmlEscape(s) {
-  return String(s)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
-}
-
 function asArray(x) {
   if (x === undefined || x === null) return [];
   return Array.isArray(x) ? x : [x];
 }
 
-function chunk(arr, size) {
-  const chunks = [];
-  for (let i = 0; i < arr.length; i += size) {
-    chunks.push(arr.slice(i, i + size));
-  }
-  return chunks;
-}
-
-// Unicommerce's GetBulkItemTypeInventory rejects requests with more than 50 SKU codes
-// ("skuCodes Maximum 50 sku codes are allowed") -- confirmed by hitting that error live.
-const MAX_SKUS_PER_CALL = 50;
-
-async function fetchInventoryBatch(client, { skuCodes, facilityCodes }) {
-  const skuXml = skuCodes.map((s) => `<ser:SkuCode>${xmlEscape(s)}</ser:SkuCode>`).join("\n");
-  const facilityXml = facilityCodes.map((f) => `<ser:FacilityCode>${xmlEscape(f)}</ser:FacilityCode>`).join("\n");
-
-  const body = `<ser:GetBulkItemTypeInventoryRequest>
-    <ser:SkuCodes>
-      ${skuXml}
-    </ser:SkuCodes>
-    <ser:FacilityCodes>
-      ${facilityXml}
-    </ser:FacilityCodes>
-  </ser:GetBulkItemTypeInventoryRequest>`;
+async function fetchCatalogPage(client, { displayStart, displayLength }) {
+  const body = `<ser:SearchItemTypesRequest>
+    <ser:GetInventorySnapshot>true</ser:GetInventorySnapshot>
+    <ser:SearchOptions>
+      <ser:DisplayStart>${displayStart}</ser:DisplayStart>
+      <ser:DisplayLength>${displayLength}</ser:DisplayLength>
+    </ser:SearchOptions>
+  </ser:SearchItemTypesRequest>`;
 
   const result = await client.call(body);
-  const resp = result.GetBulkItemTypeInventoryResponse;
-  const itemInventories = asArray(resp.InventoryDetails?.ItemInventory);
-
-  const rows = [];
-  for (const item of itemInventories) {
-    const facilities = asArray(item.Facilities?.FacilityInventory);
-    for (const facility of facilities) {
-      rows.push({
-        sku: item.ItemSKU,
-        // Trimmed because Unicommerce's ItemTypeName has stray leading/trailing whitespace
-        // on some catalog entries, which throws off Sheet column alignment.
-        itemName: item.ItemTypeName ? item.ItemTypeName.trim() : null,
-        facilityCode: facility.FacilityCode,
-        currentStock: parseInt(facility.Inventory, 10) || 0,
-      });
-    }
-  }
-  return rows;
+  const resp = result.SearchItemTypesResponse;
+  const totalRecords = parseInt(resp.TotalRecords, 10) || 0;
+  const items = asArray(resp.ItemTypes?.ItemType);
+  return { totalRecords, items };
 }
 
 /**
- * Pulls current stock for the given SKUs across the given facilities, batching SKUs into
- * groups of MAX_SKUS_PER_CALL to stay within Unicommerce's per-request limit.
- * Returns [{ sku, itemName, facilityCode, currentStock }].
+ * Pulls current stock for the FULL Unicommerce catalog (not just SKUs that sold recently)
+ * via SearchItemTypes with GetInventorySnapshot=true, which embeds per-facility stock
+ * directly in the same paginated call -- confirmed live: a single SKU can carry multiple
+ * InventorySnapshot entries (one per facility it's stocked at). Unlike
+ * GetBulkItemTypeInventory's confirmed 50-SKU cap, DisplayLength=500 here returns a full
+ * page with no error, so paginating in larger chunks is safe.
+ *
+ * Returns [{ sku, itemName, facilityCode, currentStock }], one row per (sku, facility).
  */
-async function pullInventorySnapshot(client, { skuCodes, facilityCodes }) {
-  const batches = chunk(skuCodes, MAX_SKUS_PER_CALL);
-  const results = [];
-  for (const batch of batches) {
-    const rows = await fetchInventoryBatch(client, { skuCodes: batch, facilityCodes });
-    results.push(...rows);
+async function pullInventorySnapshot(client, { pageSize = 500, onProgress } = {}) {
+  let displayStart = 0;
+  const rows = [];
+
+  while (true) {
+    const { totalRecords, items } = await fetchCatalogPage(client, { displayStart, displayLength: pageSize });
+
+    for (const item of items) {
+      // Trimmed because Unicommerce's Name has stray leading/trailing whitespace on some
+      // catalog entries, which throws off Sheet column alignment.
+      const itemName = item.Name ? item.Name.trim() : null;
+      for (const snapshot of asArray(item.InventorySnapshots?.InventorySnapshot)) {
+        rows.push({
+          sku: item.SKUCode,
+          itemName,
+          facilityCode: snapshot.Facility,
+          currentStock: parseInt(snapshot.Inventory, 10) || 0,
+        });
+      }
+    }
+
+    displayStart += pageSize;
+    if (onProgress) onProgress(`Pulled catalog ${Math.min(displayStart, totalRecords)}/${totalRecords} SKUs`);
+    if (displayStart >= totalRecords || items.length === 0) break;
   }
-  return results;
+
+  return rows;
 }
 
 module.exports = { pullInventorySnapshot };

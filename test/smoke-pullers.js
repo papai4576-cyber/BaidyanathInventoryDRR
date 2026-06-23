@@ -25,15 +25,9 @@ const config = require("../config/config");
       const detail = await getSaleOrderLineItems(client, orders[0].Code);
       console.log("First order detail:", JSON.stringify(detail, null, 2));
 
-      if (detail.items.length > 0) {
-        const sku = detail.items[0].itemSku;
-        console.log("\nTesting GetBulkItemTypeInventory for SKU:", sku);
-        const inv = await pullInventorySnapshot(client, {
-          skuCodes: [sku],
-          facilityCodes: config.facilityCodes,
-        });
-        console.log("Inventory result:", inv);
-      }
+      console.log("\nTesting SearchItemTypes full catalog pull...");
+      const inv = await pullInventorySnapshot(client);
+      console.log(`Catalog rows: ${inv.length}. First 3:`, inv.slice(0, 3));
     }
   } catch (e) {
     if (e instanceof SoapFault) {

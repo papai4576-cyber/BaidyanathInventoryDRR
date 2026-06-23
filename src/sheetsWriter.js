@@ -36,8 +36,16 @@ function sanitizeTabName(facilityCode) {
   return facilityCode.replace(/[:\\/?*\[\]]/g, "_").slice(0, 100);
 }
 
+// Displayed in IST, not raw UTC -- the GitHub Actions runner and Date#toISOString() are
+// both UTC, which reads as "wrong" / 4.5h stale to anyone scanning the sheet against their
+// own IST wall clock without mentally converting.
 function buildBannerRow(syncedAt, drrWindowDays) {
-  return [`Last synced: ${syncedAt} | DRR window: ${drrWindowDays} days`];
+  const istLabel = new Date(syncedAt).toLocaleString("en-IN", {
+    timeZone: "Asia/Kolkata",
+    dateStyle: "medium",
+    timeStyle: "medium",
+  });
+  return [`Last synced: ${istLabel} IST | DRR window: ${drrWindowDays} days`];
 }
 
 function buildHeader(channels, drrWindowDays) {
