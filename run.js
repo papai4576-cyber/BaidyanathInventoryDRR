@@ -1,3 +1,11 @@
+// Disable HTTP keep-alive globally before any client opens a connection. The Google OAuth
+// token endpoint repeatedly fails with ERR_STREAM_PREMATURE_CLOSE during gzip decompression
+// on CI runners -- a known node-fetch/gaxios failure mode caused by reusing a pooled
+// keep-alive socket that the server has already started closing. Forcing a fresh connection
+// per request avoids it.
+require("http").globalAgent.keepAlive = false;
+require("https").globalAgent.keepAlive = false;
+
 const config = require("./config/config");
 const { UnicommerceClient } = require("./src/soapClient");
 const { pullSalesHistory } = require("./src/salesPuller");
