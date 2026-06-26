@@ -443,9 +443,23 @@ async function deleteLegacyTab(sheets, sheetId, legacyTabName) {
   );
 }
 
+const RETRYABLE_NETWORK_ERROR_CODES = new Set([
+  "ERR_STREAM_PREMATURE_CLOSE",
+  "ECONNRESET",
+  "ETIMEDOUT",
+  "EPIPE",
+  "ENOTFOUND",
+  "EAI_AGAIN",
+]);
+
 function isRetryableSheetsError(err) {
-  const status = err?.response?.status ?? err?.status ?? err?.code;
-  return status === 429 || (typeof status === "number" && status >= 500 && status < 600);
+  const status = err?.response?.status ?? err?.status;
+  if (status === 429 || (typeof status === "number" && status >= 500 && status < 600)) return true;
+
+  const code = err?.code ?? err?.cause?.code ?? err?.error?.code;
+  if (RETRYABLE_NETWORK_ERROR_CODES.has(code)) return true;
+
+  return false;
 }
 
 async function withSheetsRetry(fn, label) {
