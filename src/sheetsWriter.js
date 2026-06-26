@@ -464,8 +464,8 @@ function isRetryableSheetsError(err) {
 
 async function withSheetsRetry(fn, label) {
   return withRetry(fn, {
-    retries: 3,
-    baseDelayMs: 500,
+    retries: 6,
+    baseDelayMs: 2000,
     isRetryable: isRetryableSheetsError,
     onRetry: (err, attempt, delayMs) =>
       console.warn(`[${new Date().toISOString()}] Sheets API call (${label}) failed (attempt ${attempt}), retrying in ${delayMs}ms: ${err.message}`),
