@@ -29,7 +29,7 @@ module.exports = {
   reorderThresholdDays: intEnv("REORDER_THRESHOLD_DAYS", 10),
 
   // Used for suggested reorder quantity = drr * (leadTimeDays + safetyStockDays) - currentStock
-  leadTimeDays: intEnv("LEAD_TIME_DAYS", 7),
+  leadTimeDays: intEnv("LEAD_TIME_DAYS", 10),
   safetyStockDays: intEnv("SAFETY_STOCK_DAYS", 5),
 
   // Only orders in these statuses count toward sales velocity (excludes cancelled orders etc).
