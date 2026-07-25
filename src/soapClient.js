@@ -88,6 +88,13 @@ class UnicommerceClient {
         }
 
         const text = await res.text();
+        const snippet = text.slice(0, 500).replace(/\s+/g, " ").trim();
+        if (!res.ok) {
+          throw new TransientSoapError(
+            `Unicommerce HTTP ${res.status} ${res.statusText}; body[0..500]=${JSON.stringify(snippet)}`,
+            null
+          );
+        }
         let parsed;
         try {
           parsed = await parseStringPromise(text, {
@@ -95,19 +102,19 @@ class UnicommerceClient {
             tagNameProcessors: [(name) => name.replace(/^.*:/, "")],
           });
         } catch (err) {
-          throw new TransientSoapError(`XML parse error from Unicommerce response: ${err.message}`, err);
+          throw new TransientSoapError(`XML parse error from Unicommerce response: ${err.message}; body[0..500]=${JSON.stringify(snippet)}`, err);
         }
 
         const body = parsed?.Envelope?.Body;
         if (body?.Fault) {
           throw new SoapFault(body.Fault.faultstring, text);
         }
-        // A real response always has at least one child under <Body> (the response
-        // wrapper element). No Body at all, or an empty one, means the XML parsed without
-        // throwing but isn't an actual SOAP response -- confirmed live: a gateway hiccup
-        // once returned a body that left this undefined, crashing the caller with no retry.
         if (!body || Object.keys(body).length === 0) {
-          throw new TransientSoapError("Unexpected empty/malformed SOAP body from Unicommerce (no Envelope.Body content)", null);
+          const topKeys = parsed && typeof parsed === "object" ? Object.keys(parsed).join(",") : "(none)";
+          throw new TransientSoapError(
+            `Unexpected empty/malformed SOAP body from Unicommerce (no Envelope.Body content); status=${res.status}; topKeys=${topKeys}; body[0..500]=${JSON.stringify(snippet)}`,
+            null
+          );
         }
         return body;
       },
