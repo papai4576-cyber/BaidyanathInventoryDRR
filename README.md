@@ -12,6 +12,26 @@ Run it on a local machine (or any host with an allow-listed IP) instead.
 The same setup works on any number of machines — clone, configure `.env`,
 run.
 
+## Two ways to use this
+
+- **Warehouse teams:** run the packaged Windows exe. Instructions for
+  non-technical users are in [`docs/warehouse-setup.md`](docs/warehouse-setup.md).
+- **Developers:** clone and run with Node.js. Instructions below.
+
+## Building the Windows exe (developer)
+
+From a machine with Node.js 18+:
+
+```bash
+npm install
+npm run build:win
+```
+
+This produces `dist/BaidyanathDRR.exe` (~52 MB). Ship it as a folder
+alongside a filled-in `config.json` (see `config.example.json`) and the
+Google service account JSON. See `docs/warehouse-setup.md` for the folder
+layout end users will receive.
+
 ## Prerequisites
 
 - Node.js 18 or newer

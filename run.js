@@ -62,7 +62,11 @@ async function main() {
   log(`Wrote ${facilityTables.length} facility tabs to Google Sheet: ${facilityTables.map((f) => f.facilityCode).join(", ")}.`);
 }
 
-main().catch((err) => {
-  console.error(`[${new Date().toISOString()}] FATAL:`, err);
-  process.exit(1);
-});
+module.exports = { main };
+
+if (require.main === module) {
+  main().catch((err) => {
+    console.error(`[${new Date().toISOString()}] FATAL:`, err);
+    process.exit(1);
+  });
+}

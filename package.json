@@ -5,14 +5,32 @@
   "description": "Channel-wise inventory and DRR monitoring for Baidyanath, sourced from Unicommerce, pushed to Google Sheets.",
   "type": "commonjs",
   "main": "run.js",
+  "bin": {
+    "baidyanath-drr": "bin/app.js"
+  },
   "scripts": {
     "start": "node run.js",
-    "inspect-wsdl": "node scripts/inspectWsdl.js"
+    "app": "node bin/app.js",
+    "inspect-wsdl": "node scripts/inspectWsdl.js",
+    "build:win": "pkg . --targets node18-win-x64 --output dist/BaidyanathDRR.exe --compress GZip"
   },
   "dependencies": {
     "dotenv": "^16.4.5",
     "googleapis": "^144.0.0",
     "strong-soap": "^6.0.0",
     "xml2js": "^0.6.2"
+  },
+  "devDependencies": {
+    "@yao-pkg/pkg": "^5.16.1"
+  },
+  "pkg": {
+    "scripts": [
+      "run.js",
+      "src/**/*.js",
+      "config/**/*.js"
+    ],
+    "targets": [
+      "node18-win-x64"
+    ]
   }
 }

@@ -1,0 +1,14 @@
+{
+  "unicommerceTenantUrl": "https://baidyanatheast.unicommerce.com",
+  "unicommerceUsername": "YOUR_UNICOMMERCE_USERNAME",
+  "unicommerceApiKey": "YOUR_UNICOMMERCE_API_KEY",
+
+  "googleSheetId": "YOUR_GOOGLE_SHEET_ID",
+  "googleServiceAccountKeyPath": "service-account.json",
+
+  "drrWindowDays": 14,
+  "reorderThresholdDays": 10,
+  "leadTimeDays": 7,
+  "safetyStockDays": 5,
+  "getSaleOrderConcurrency": 10
+}
