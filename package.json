@@ -12,7 +12,9 @@
     "start": "node run.js",
     "app": "node bin/app.js",
     "inspect-wsdl": "node scripts/inspectWsdl.js",
-    "build:win": "pkg . --targets node18-win-x64 --output dist/BaidyanathDRR.exe --compress GZip"
+    "bake": "node scripts/bake.js",
+    "build:win": "pkg . --targets node18-win-x64 --output dist/BaidyanathDRR.exe --compress GZip",
+    "bake:win": "npm run bake && npm run build:win"
   },
   "dependencies": {
     "dotenv": "^16.4.5",

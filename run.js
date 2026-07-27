@@ -54,6 +54,7 @@ async function main() {
   await writeInventoryDrrTable(facilityTables, {
     sheetId: config.googleSheets.sheetId,
     serviceAccountKeyPath: config.googleSheets.serviceAccountKeyPath,
+    serviceAccountCredentials: config.googleSheets.serviceAccountCredentials,
     drrWindowDays: config.drrWindowDays,
     reorderThresholdDays: config.reorderThresholdDays,
     legacyTabName: config.googleSheets.legacyTabName,

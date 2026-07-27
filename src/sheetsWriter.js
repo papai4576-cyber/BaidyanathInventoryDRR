@@ -472,11 +472,16 @@ async function withSheetsRetry(fn, label) {
   });
 }
 
-async function writeInventoryDrrTable(facilityTables, { sheetId, serviceAccountKeyPath, drrWindowDays, reorderThresholdDays, legacyTabName, syncedAt }) {
-  const auth = new google.auth.GoogleAuth({
-    keyFile: serviceAccountKeyPath,
-    scopes: ["https://www.googleapis.com/auth/spreadsheets"],
-  });
+async function writeInventoryDrrTable(facilityTables, { sheetId, serviceAccountKeyPath, serviceAccountCredentials, drrWindowDays, reorderThresholdDays, legacyTabName, syncedAt }) {
+  // Prefer inline credentials (used when the app is packaged as an .exe and there
+  // is no key file on disk). Fall back to keyFile for dev / unpackaged runs.
+  const authOpts = { scopes: ["https://www.googleapis.com/auth/spreadsheets"] };
+  if (serviceAccountCredentials) {
+    authOpts.credentials = serviceAccountCredentials;
+  } else {
+    authOpts.keyFile = serviceAccountKeyPath;
+  }
+  const auth = new google.auth.GoogleAuth(authOpts);
   const sheets = google.sheets({ version: "v4", auth });
 
   const meta = await withSheetsRetry(() => sheets.spreadsheets.get({ spreadsheetId: sheetId }), "get(initial)");

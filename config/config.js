@@ -16,6 +16,13 @@ module.exports = {
   googleSheets: {
     sheetId: process.env.GOOGLE_SHEET_ID,
     serviceAccountKeyPath: process.env.GOOGLE_SERVICE_ACCOUNT_KEY_PATH || "./secrets/service-account.json",
+    // Inline JSON credentials injected by the launcher when running as a packaged
+    // .exe (bin/baked.js). Overrides serviceAccountKeyPath when present.
+    serviceAccountCredentials: (() => {
+      const raw = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
+      if (!raw) return undefined;
+      try { return JSON.parse(raw); } catch { return undefined; }
+    })(),
     // Output is now one tab per facility (tab name = facility code). This is the name of
     // the old single combined tab, kept here only so the writer can delete it on first run.
     legacyTabName: "Inventory_DRR",
