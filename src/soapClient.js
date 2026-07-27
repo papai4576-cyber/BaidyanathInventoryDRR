@@ -88,6 +88,7 @@ class UnicommerceClient {
         }
 
         const text = await res.text();
+        const snippet = (text || "").slice(0, 500).replace(/\s+/g, " ").trim();
         let parsed;
         try {
           parsed = await parseStringPromise(text, {
@@ -95,7 +96,10 @@ class UnicommerceClient {
             tagNameProcessors: [(name) => name.replace(/^.*:/, "")],
           });
         } catch (err) {
-          throw new TransientSoapError(`XML parse error from Unicommerce response: ${err.message}`, err);
+          throw new TransientSoapError(
+            `XML parse error from Unicommerce response (HTTP ${res.status}): ${err.message}. Response: ${snippet}`,
+            err
+          );
         }
 
         const body = parsed?.Envelope?.Body;
@@ -107,7 +111,10 @@ class UnicommerceClient {
         // throwing but isn't an actual SOAP response -- confirmed live: a gateway hiccup
         // once returned a body that left this undefined, crashing the caller with no retry.
         if (!body || Object.keys(body).length === 0) {
-          throw new TransientSoapError("Unexpected empty/malformed SOAP body from Unicommerce (no Envelope.Body content)", null);
+          throw new TransientSoapError(
+            `Unexpected empty/malformed SOAP body from Unicommerce (HTTP ${res.status}). Response: ${snippet}`,
+            null
+          );
         }
         return body;
       },
