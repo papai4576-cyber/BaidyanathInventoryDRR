@@ -6,6 +6,11 @@
 require("http").globalAgent.keepAlive = false;
 require("https").globalAgent.keepAlive = false;
 
+// Force IPv4-first DNS resolution. Unicommerce's edge is known to whitelist IPv4 only;
+// if the runner resolves to an AAAA record first, the connection is refused at the WAF
+// before authentication even runs.
+require("dns").setDefaultResultOrder("ipv4first");
+
 const config = require("./config/config");
 const { UnicommerceClient } = require("./src/soapClient");
 const { pullSalesHistory } = require("./src/salesPuller");
